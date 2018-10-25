@@ -14,9 +14,17 @@ TEMPLATE = app
 
 SOURCES += main.cpp\
         mainwindow.cpp \
-    qcustomplot.cpp
+    qcustomplot.cpp \
+    fftoperation.cpp
 
 HEADERS  += mainwindow.h \
-    qcustomplot.h
+    qcustomplot.h \
+    fftw3.h \
+    fftoperation.h
 
 FORMS    += mainwindow.ui
+
+LIBS += -LF:/Linux/GIT/AllProjects/VoltageWaveform -lfftw3f-3
+#LIBS += -LF:\Linux\GIT\AllProjects\VoltageWaveform\ -lfftw3f-3
+#LIBS += "F:\Linux\GIT\AllProjects\VoltageWaveform\libfftw3f-3.lib"
+

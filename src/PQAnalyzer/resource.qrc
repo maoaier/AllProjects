@@ -1,0 +1,6 @@
+<RCC>
+    <qresource prefix="/new/prefix1">
+        <file>res/logo.ico</file>
+        <file>res/wait.gif</file>
+    </qresource>
+</RCC>

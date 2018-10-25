@@ -8,6 +8,10 @@ MainWindow::MainWindow(QWidget *parent) :
     ui->setupUi(this);
     initParameter();//初始化参数
     initInterface();//初始化接口
+    //
+    connect(ui->customPlot, SIGNAL(mouseWheel(QWheelEvent*)),this,SLOT(on_plot_mouseWheel(QWheelEvent*)));
+    //connect(ui->customPlot, SIGNAL(mouseWheel(QWheelEvent*)), this, SLOT(on_plot_mouseWheel(QWheelEvent*)));
+    //fft.run();
 }
 
 //初始化类中的参数
@@ -15,12 +19,12 @@ void MainWindow::initParameter()
 {
     m_fAmplitude=STANDARD_AMPLITUDE;
     m_fPhase=STANDARD_PHASE;
-    m_iSamplingPoint=SAMPLING_POINT;
+    m_iSamplingRate=SAMPLING_POINT;
     m_iWaveNumber=SHOW_WAVE_NUMBER;
     m_bHarmonicState=false;
     ui->lineEd_amplitude->setText(QString::number(m_fAmplitude));//把参数显示到界面中
     ui->lineEd_phase->setText(QString::number(m_fPhase));
-    ui->lineEd_point->setText(QString::number(m_iSamplingPoint));
+    ui->lineEd_point->setText(QString::number(m_iSamplingRate));
     ui->lineEd_harmonicAmplitude->setText(QString::number(0));
     ui->lineEd_harmonicNumber->setText(QString::number(0));
     ui->lineEd_harmonicPhase->setText(QString::number(0));
@@ -30,7 +34,7 @@ void MainWindow::initParameter()
 //初始化接口
 void MainWindow::initInterface()
 {
-    QCustomPlot *customPlot=ui->customPlot;
+    QCustomPlot *customPlot=ui->customPlot; 
     customPlot->addGraph();//增加一条线
     m_pWaveLine=customPlot->graph(0);
     m_pWaveLine->setPen(QPen(Qt::blue));//设置线的颜色为蓝色
@@ -40,48 +44,81 @@ void MainWindow::initInterface()
     //customPlot->xAxis->setDateTimeFormat("hh:mm:ss");
     customPlot->xAxis->setLabel("采样点");//设置标签
     customPlot->yAxis->setLabel("电压(V)");
-    QVector<double> x,y;
-    samplingData(x,y);//设置默认的数据处理方式
-    m_pWaveLine->addData(x,y);//增加数据
+    //QVector<double> x,y;
+    samplingData();//设置默认的数据处理方式
+    //m_pWaveLine->setData(m_dXData,m_dYData);//增加数据
     m_pWaveLine->rescaleAxes(true);//自动适应本线
     customPlot->setInteractions(QCP::iRangeDrag | QCP::iRangeZoom | QCP::iSelectPlottables);//设置表格的交互作用
 }
 
+void MainWindow::endProcessing(int state)
+{
+
+    switch(state)
+    {
+        case 0:
+            break;
+        case M_WAVE_FOEM:
+            ui->customPlot->xAxis->setLabel("采样点");
+            break;
+        case M_SPECTRUM:
+            ui->customPlot->xAxis->setLabel("频率(HZ)");
+            m_pWaveLine->clearData();
+            m_pWaveLine->addData(m_dXSpectrum,m_dYSpectrum);
+            m_bHarmonicState=true;
+            break;
+    default:
+        break;
+    }
+    showInterface();
+}
+
 
 //采样数据
-void MainWindow::samplingData(QVector<double> &x,QVector<double> &y)
+void MainWindow::samplingData()
 {
-    qDebug()<<"data processing\n";
+    m_dXData.clear();
+    m_dYData.clear();
     double VoltageRange=m_fAmplitude*sqrt(2);//电压范围
     double WaveRange=m_iWaveNumber*2*M_PI;
     //存在谐波数据生成处理
+
+    int samplingPoint=m_iSamplingRate*m_iWaveNumber;
     if(m_cHarmonicData.size())
     {
         int number=m_cHarmonicData.size();
-        for(int i=0;i<m_iSamplingPoint;++i)
+        for(int i=0;i<samplingPoint;++i)
         {
-            x.append(i);
+            m_dXData.append(i);
             double dataSum=0;
             for(int j=0;j<number;j++)
             {
                 //增加谐波数据
                 const CHarmonic &harm=m_cHarmonicData.at(j);
-                dataSum+= harm.m_fRange*qSin(WaveRange*i*harm.m_iNumber/m_iSamplingPoint+harm.m_fPhase/180*M_PI);
+                dataSum+= harm.m_fRange*qSin(WaveRange*i*harm.m_iNumber/samplingPoint+harm.m_fPhase/180*M_PI);
             }
             //增加基波数据
-             y.append(dataSum+VoltageRange*qSin(WaveRange*i/m_iSamplingPoint+m_fPhase/180*M_PI));
+             m_dYData.append(dataSum+VoltageRange*qSin(WaveRange*i/samplingPoint+m_fPhase/180*M_PI));
         }
     }
     else//只有基波数据处理
     {
-        for(int i=0;i<m_iSamplingPoint;++i)
+        for(int i=0;i<samplingPoint;++i)
         {
-            x.append(i);
-            y.append(VoltageRange*qSin(WaveRange*i/(m_iSamplingPoint-1)+m_fPhase/180*M_PI));
+            m_dXData.append(i);
+            m_dYData.append(VoltageRange*qSin(WaveRange*i/(samplingPoint)+m_fPhase/180*M_PI));
         }
     }
     //波形状态已经改变
     m_bHarmonicState=false;
+}
+
+//显示界面
+void MainWindow::showInterface()
+{
+    m_pWaveLine->rescaleAxes(false);
+    m_pWaveLine->rescaleAxes(true);
+    ui->customPlot->replot();
 }
 
 
@@ -101,32 +138,27 @@ void MainWindow::on_pushBtn_show_clicked()
         m_bHarmonicState=true;
     }
     //判断数据是否改变，如果没有改变则不做处理
-    if((amplitude!=m_fAmplitude)||(phase!=m_fPhase)||(point!=m_iSamplingPoint)||(true==m_bHarmonicState))
+    if((amplitude!=m_fAmplitude)||(phase!=m_fPhase)||(point!=m_iSamplingRate)||(true==m_bHarmonicState))
     {
-        qDebug()<<"get new data\n";
         //判断采样点是否正确
-        if(m_iSamplingPoint<0)
-        {
-            if((amplitude==m_fAmplitude)&&(phase==m_fAmplitude))
-            {
-                m_pWaveLine->rescaleAxes(false);
-                m_pWaveLine->rescaleAxes(true);
-                ui->customPlot->replot();
-                return ;
-            }
-        }
-        m_iSamplingPoint=point;
+//        if(point<0)
+//        {
+//            if((amplitude==m_fAmplitude)&&(phase==m_fAmplitude))
+//            {
+//                endProcessing(M_WAVE_FOEM);//最后的处理
+//                return ;
+//            }
+//        }
+        m_iSamplingRate=point;//从新给成员变量赋值
         m_fAmplitude=amplitude;
         m_fPhase=phase;
         m_pWaveLine->clearData();
-        QVector<double> x,y;
-        samplingData(x,y);
-        m_pWaveLine->addData(x,y);
+        //QVector<double> x,y;
+        samplingData();
+        m_pWaveLine->setData(m_dXData,m_dYData);
     }
     //重新让表格自动适应
-    m_pWaveLine->rescaleAxes(false);
-    m_pWaveLine->rescaleAxes(true);
-    ui->customPlot->replot();
+    endProcessing(M_WAVE_FOEM);
 }
 
 
@@ -135,6 +167,24 @@ void MainWindow::on_pushBtn_show_clicked()
 MainWindow::~MainWindow()
 {
     delete ui;
+}
+
+
+//鼠标滚动事件
+void MainWindow::on_plot_mouseWheel(QWheelEvent *event)
+{
+    // 当鼠标在x轴或y轴上滚动时,只对相应的轴进行缩放功能
+    QPoint pos = event->pos();
+    QRect rect_axis =ui->customPlot->xAxis->axisRect()->rect();
+    if (rect_axis.contains(pos)) {
+        ui->customPlot->axisRect()->setRangeZoom(Qt::Horizontal|Qt::Vertical);
+        return;
+    }
+
+    if (pos.x() < rect_axis.left())
+        ui->customPlot->axisRect()->setRangeZoom(ui->customPlot->yAxis->orientation());
+    else if (pos.y() > rect_axis.bottom())
+        ui->customPlot->axisRect()->setRangeZoom(ui->customPlot->xAxis->orientation());
 }
 
 
@@ -200,5 +250,58 @@ void MainWindow::on_pushBuClear_clicked()
         m_bHarmonicState=true;
         ui->comboBox_harmonic->clear();
     }
+
+}
+
+//傅里叶处理
+void MainWindow::on_actionFFTW_triggered()
+{
+    fftwf_complex *in, *out;
+    fftwf_plan p;
+    int N= m_iSamplingRate*m_iWaveNumber;//采样率与周波数
+    int i;
+    int j;
+    in = (fftwf_complex*) fftwf_malloc(sizeof(fftwf_complex) * N);
+    out = (fftwf_complex*) fftwf_malloc(sizeof(fftwf_complex) * N);
+    for( i=0; i < N; i++)
+    {
+        in[i][0] = m_dYData.at(i);
+        in[i][1] = 0.0;
+        //qDebug("%6.2f ",in[i][0]);
+        //printf("%6.2f ",in[i][0]);
+    }
+    printf("\n");
+    p=fftwf_plan_dft_1d(N,in,out, FFTW_FORWARD, FFTW_ESTIMATE);
+    fftwf_execute(p); /* repeat as needed*/
+    double tmp,tmp2;
+    m_dXSpectrum.clear();
+    m_dYSpectrum.clear();
+    for(j = 0;j < N;j++)
+    {
+        m_dXSpectrum.append(j*50/m_iWaveNumber);
+        tmp=sqrt(out[j][0]*out[j][0]+out[j][1]*out[j][1]);
+        tmp2=tmp/N*tmp/N;
+        m_dYSpectrum.append(sqrt(2*tmp2));
+        printf("%f:%f ",out[j][0],out[j][1]);
+    }
+    fftwf_destroy_plan(p);
+    fftwf_free(in);
+    fftwf_free(out);
+    endProcessing(M_SPECTRUM);//结尾消息处理
+    return ;
+}
+
+void MainWindow::on_pushButton_clicked()
+{
+    qDebug()<<"hello world";
+}
+
+void MainWindow::on_customPlot_3_destroyed()
+{
+
+}
+
+void MainWindow::on_helloworld_clicked()
+{
 
 }
